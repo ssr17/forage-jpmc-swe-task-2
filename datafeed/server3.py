@@ -150,7 +150,7 @@ def order_book(orders, book, stock_name):
 
 def generate_csv():
     """ Generate a CSV of order history. """
-    with open('test.csv', 'wb') as f:
+    with open('test.csv', 'w',newline='') as f:
         writer = csv.writer(f)
         for t, stock, side, order, size in orders(market()):
             if t > MARKET_OPEN + SIM_LENGTH:
@@ -160,7 +160,7 @@ def generate_csv():
 
 def read_csv():
     """ Read a CSV or order history into a list. """
-    with open('test.csv', 'rt') as f:
+    with open('test.csv', "r") as f:
         for time, stock, side, order, size in csv.reader(f):
             yield dateutil.parser.parse(time), stock, side, float(order), int(size)
 
@@ -235,10 +235,13 @@ def run(routes, host='0.0.0.0', port=8080):
     thread.daemon = True
     thread.start()
     print('HTTP server started on port 8080')
-    while True:
-        from time import sleep
-        sleep(1)
-    server.shutdown()
+    try:
+        while True:
+            from time import sleep
+            sleep(1)
+    except KeyboardInterrupt:
+        server.shutdown()
+        thread.join()
     server.start()
     server.waitForThread()
 
@@ -253,14 +256,15 @@ ops = {
 }
 
 
+
 class App(object):
     """ The trading game server application. """
 
     def __init__(self):
         self._book_1 = dict()
         self._book_2 = dict()
-        self._data_1 = order_book(read_csv(), self._book_1, 'ABC')
-        self._data_2 = order_book(read_csv(), self._book_2, 'DEF')
+        self._data_1 = self.safe_order_book('ABC')
+        self._data_2 = self.safe_order_book('DEF')
         self._rt_start = datetime.now()
         self._sim_start, _, _ = next(self._data_1)
         self.read_10_first_lines()
@@ -297,7 +301,7 @@ class App(object):
             t1, bids1, asks1 = next(self._current_book_1)
             t2, bids2, asks2 = next(self._current_book_2)
         except Exception as e:
-            print("error getting stocks...reinitalizing app")
+            print("error getting stocks...reinitializing app",e)
             self.__init__()
             t1, bids1, asks1 = next(self._current_book_1)
             t2, bids2, asks2 = next(self._current_book_2)
@@ -330,7 +334,15 @@ class App(object):
                 }
             }]
 
-
+    def safe_order_book(self, stock_name):
+        data=order_book(read_csv(),{}, stock_name)
+        try:
+            next(data)
+        except StopIteration:
+            print(f"No data available for {stock_name}.Generating new data...")
+            generate_csv()
+            data=order_book(read_csv(),{}, stock_name)
+        return data
 ################################################################################
 #
 # Main
